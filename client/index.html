@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Master Pro</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Лоадер -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loader-content">
+            <div class="quiz-spinner"></div>
+            <h2>Quiz Master Pro</h2>
+            <p>Загрузка игры...</p>
+        </div>
+    </div>
+
+    <!-- Кнопка открытия чата (видна всегда) -->
+    <button id="toggleChatBtn" class="chat-toggle-btn">
+        <i class="fas fa-comments"></i>
+        <span class="chat-badge hidden" id="chatNotificationBadge">0</span>
+    </button>
+
+    <!-- Основной контейнер -->
+    <div class="game-container">
+        <!-- Чат боковая панель -->
+        <div id="chatContainer" class="chat-container hidden">
+            <div class="chat-header">
+                <h3><i class="fas fa-comments"></i> Чат лобби</h3>
+                <div class="chat-actions">
+                    <button id="chatMinimizeBtn" class="chat-action-btn" title="Свернуть">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <button id="chatCloseBtn" class="chat-action-btn" title="Закрыть">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="chat-controls">
+                <div class="connection-status">
+                    <div id="connectionStatus" class="status-indicator status-connected">
+                        <i class="fas fa-circle"></i> Подключен
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="system-message">
+                    <i class="fas fa-info-circle"></i> Добро пожаловать в общий чат!
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="chat-input-wrapper">
+                    <input type="text" id="chatInput" class="chat-input" placeholder="Введите сообщение..." maxlength="500" disabled>
+                    <button id="sendChatBtn" class="chat-send-btn" disabled>
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="chat-input-hint">
+                    Нажмите Enter для отправки
+                </div>
+            </div>
+        </div>
+
+        <!-- Свернутый чат -->
+        <div id="chatMinimized" class="chat-minimized hidden">
+            <div class="chat-minimized-header">
+                <span><i class="fas fa-comment"></i> Чат</span>
+                <button id="chatRestoreBtn" class="chat-restore-btn">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+            </div>
+            <div class="chat-minimized-notification">
+                <span id="minimizedMessageCount">0</span>
+            </div>
+        </div>
+
+        <!-- ЭКРАН ЛОББИ -->
+        <div id="lobbyScreen" class="lobby-screen fade-in">
+            <div class="lobby-wrapper">
+                <div class="game-title">
+                    <h1><i class="fas fa-brain"></i> Quiz Master Pro</h1>
+                    <p>Улучшенная сетевая викторина с настройками игры и чатом</p>
+                </div>
+
+                <div id="lobbyChoice">
+                    <div class="lobby-tabs">
+                        <button id="tabCreate" class="lobby-tab active">
+                            <i class="fas fa-plus-circle"></i> Создать игру
+                        </button>
+                        <button id="tabJoin" class="lobby-tab">
+                            <i class="fas fa-sign-in-alt"></i> Присоединиться
+                        </button>
+                    </div>
+
+                    <!-- Создание игры -->
+                    <div id="createLobbyBlock" class="lobby-block">
+                        <div class="form-group">
+                            <input type="text" id="playerNameCreate" class="form-input" 
+                                   placeholder="Ваше имя" maxlength="20">
+                            <button id="createLobbyBtn" class="btn btn-primary">
+                                <i class="fas fa-gamepad"></i> Создать комнату
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Присоединение к игре -->
+                    <div id="joinLobbyBlock" class="lobby-block hidden">
+                        <div class="form-group">
+                            <input type="text" id="playerNameJoin" class="form-input" 
+                                   placeholder="Ваше имя" maxlength="20">
+                            <input type="text" id="lobbyCodeInput" class="form-input" 
+                                   placeholder="Код комнаты" maxlength="6">
+                            <button id="joinLobbyBtn" class="btn btn-primary">
+                                <i class="fas fa-play-circle"></i> Войти в игру
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ожидание игроков -->
+                <div id="waitingRoom" class="waiting-room hidden">
+                    <h3><i class="fas fa-users"></i> Ожидание игроков</h3>
+                    
+                    <div class="code-display">
+                        <p>Код комнаты:</p>
+                        <div id="lobbyCodeDisplay" class="code"></div>
+                        <p class="hint">Поделитесь кодом с друзьями!</p>
+                    </div>
+
+                    <div class="players-list">
+                        <h3>Игроки в комнате (<span id="playersCount">0</span>):</h3>
+                        <div id="playersList"></div>
+                    </div>
+
+                    <!-- Настройки игры (только для хоста) -->
+                    <div id="gameSettings" class="game-settings hidden">
+                        <h3><i class="fas fa-cogs"></i> Настройки игры</h3>
+                        
+                        <div class="settings-grid">
+                            <!-- Количество вопросов -->
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <i class="fas fa-question-circle"></i> Количество вопросов
+                                </label>
+                                <input type="range" id="settingQuestionCount" class="setting-range" 
+                                       min="1" max="30" step="1" value="10">
+                                <span id="settingQuestionCountValue" class="setting-value">10</span>
+                            </div>
+
+                            <!-- Сложность -->
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <i class="fas fa-chart-line"></i> Сложность
+                                </label>
+                                <select id="settingDifficulty" class="setting-select">
+                                    <option value="easy">Легкая</option>
+                                    <option value="medium" selected>Средняя</option>
+                                    <option value="hard">Сложная</option>
+                                </select>
+                                <span id="difficultyDisplay" class="difficulty-badge difficulty-medium">Средняя</span>
+                            </div>
+
+                            <!-- Время на ответ -->
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <i class="fas fa-clock"></i> Время на вопрос
+                                </label>
+                                <input type="range" id="settingTime" class="setting-range" 
+                                       min="5" max="60" step="5" value="20">
+                                <span id="settingTimeValue" class="setting-value">20 сек</span>
+                            </div>
+
+                            <!-- Максимум ошибок -->
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <i class="fas fa-times-circle"></i> Максимум ошибок
+                                </label>
+                                <input type="range" id="settingErrors" class="setting-range" 
+                                       min="0" max="5" step="1" value="1">
+                                <span id="settingErrorsValue" class="setting-value">1</span>
+                            </div>
+                        </div>
+
+                        <button id="saveSettingsBtn" class="btn btn-secondary">
+                            <i class="fas fa-save"></i> Сохранить настройки
+                        </button>
+                        <p class="hint" style="margin-top: 15px; font-size: 0.9rem; color: rgba(255,255,255,0.6);">
+                            Настройки сохранятся только при нажатии кнопки "Сохранить настройки"
+                        </p>
+                    </div>
+
+                    <div id="hostControls" class="hidden">
+                        <button id="startGameBtn" class="btn btn-success">
+                            <i class="fas fa-play"></i> Начать игру
+                        </button>
+                        <p class="hint">Для начала игры нужно минимум 2 игрока</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ИГРОВОЙ ЭКРАН -->
+        <div id="gameScreen" class="game-screen hidden">
+            <!-- Хедер игры -->
+            <div class="game-header">
+                <div class="game-info">
+                    <div class="info-item">
+                        <span class="info-label">ВОПРОС</span>
+                        <span id="questionCounter" class="info-value">1/10</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">ИГРОКОВ</span>
+                        <span id="playersCount" class="info-value">2</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">ВАШ СЧЕТ</span>
+                        <span id="playerScore" class="info-value">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">ОШИБКИ (на вопрос)</span>
+                        <span id="playerErrors" class="info-value">0/1</span>
+                    </div>
+                </div>
+                <div class="timer-container">
+                    <div class="timer" id="gameTimer">20</div>
+                </div>
+            </div>
+
+            <!-- Основное поле -->
+            <div class="game-main">
+                <!-- Панель игроков -->
+                <div class="players-panel">
+                    <h3><i class="fas fa-users"></i> Игроки</h3>
+                    <div id="playersPanel"></div>
+                </div>
+
+                <!-- Область вопроса -->
+                <div class="question-area">
+                    <div class="question-header">
+                        <div id="questionCategory" class="question-category"></div>
+                        <div class="question-progress">
+                            <span id="currentQuestionNum">1</span>
+                            <div class="progress-bar">
+                                <div id="progressFill" class="progress-fill" style="width: 10%"></div>
+                            </div>
+                            <span id="totalQuestions">10</span>
+                        </div>
+                    </div>
+
+                    <h2 id="questionText" class="question-text"></h2>
+
+                    <!-- Варианты ответов -->
+                    <div id="optionsContainer" class="options-container"></div>
+
+                    <!-- Результаты вопроса -->
+                    <div id="answerResult" class="answer-result hidden">
+                        <div class="result-icon"></div>
+                        <h3 id="resultText"></h3>
+                        <p id="correctAnswer"></p>
+                        <p id="explanationText" class="hidden"></p>
+                    </div>
+
+                    <!-- Кнопки действия -->
+                    <div id="hostGameControls" class="game-actions hidden">
+                        <button id="nextQuestionBtn" class="btn btn-success">
+                            <i class="fas fa-forward"></i> Следующий вопрос
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ЭКРАН РЕЗУЛЬТОВ -->
+        <div id="resultsScreen" class="results-screen hidden">
+            <div class="results-content">
+                <!-- Победитель -->
+                <div class="winner-section">
+                    <div class="winner-badge"></div>
+                    <div class="winner-info">
+                        <div id="winnerName" class="winner-name"></div>
+                        <div id="winnerScore" class="winner-score"></div>
+                    </div>
+                </div>
+
+                <!-- Подиум -->
+                <div class="podium-section">
+                    <h2>Топ игроков</h2>
+                    <div class="podium"></div>
+                </div>
+
+                <!-- Статистика игры -->
+                <div id="gameStats" class="game-stats"></div>
+
+                <!-- Остальные игроки -->
+                <div class="other-players">
+                    <h3>Остальные участники</h3>
+                    <div class="players-grid"></div>
+                </div>
+
+                <div class="game-actions" style="margin-top: 40px;">
+                    <button id="backToLobbyBtn" class="btn btn-primary">
+                        <i class="fas fa-redo"></i> Вернуться в лобби
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Сообщения -->
+    <div id="messageOverlay" class="message-overlay hidden">
+        <div class="message-box">
+            <div id="messageIcon" class="message-icon"></div>
+            <div id="messageText" class="message-text"></div>
+            <button id="closeMessageBtn" class="btn btn-primary" style="margin-top: 30px;">OK</button>
+        </div>
+    </div>
+
+    <!-- Подключаем Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Подключаем чат и клиент -->
+    <script src="chat.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
