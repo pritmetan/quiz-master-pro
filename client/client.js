@@ -102,14 +102,17 @@ class QuizGameClient {
     });
 
     this.socket.on('answerSubmitted', (data) => {
-      if (data.errors > data.maxErrors) {
-        this.showMessage('⚠️', `Вы превысили лимит ошибок на этот вопрос!`);
+      const remaining = Math.max(0, (data.maxErrors ?? 0) - (data.errors ?? 0));
+      const attemptsExhausted = !data.isCorrect && (data.errors ?? 0) >= (data.maxErrors ?? 0);
+
+      if (attemptsExhausted) {
+        this.showMessage('⚠️', `Вы исчерпали лимит ошибок на этот вопрос!`);
         this.disableOptions(true);
       } else if (data.isCorrect) {
         this.showMessage('✅', 'Правильно!');
         this.disableOptions(true);
       } else {
-        this.showMessage('❌', `Ошибка! Осталось попыток: ${data.maxErrors - data.errors}`);
+        this.showMessage('❌', `Ошибка! Осталось попыток: ${remaining}`);
         // Не блокируем кнопки, можно пробовать снова
       }
       setTimeout(() => this.closeMessage(), 2000);
@@ -133,6 +136,11 @@ class QuizGameClient {
 
     this.socket.on('lobbyError', (data) => {
       this.showMessage('❌', data.message);
+    });
+
+    this.socket.on('lobbyClosed', (data) => {
+      this.showMessage('👋', data?.message || 'Лобби закрыто');
+      this.leaveLobbyToMain();
     });
 
     this.socket.on('connect_error', (error) => {
@@ -252,6 +260,31 @@ class QuizGameClient {
     document.getElementById('waitingRoom').classList.remove('hidden');
     this.selectedAnswer = null;
     // Чат не открывается автоматически, остаётся в текущем состоянии
+  }
+
+  leaveLobbyToMain() {
+    // Полный выход в стартовый экран выбора "создать/войти"
+    this.playerId = null;
+    this.isHost = false;
+    this.gameState = null;
+    this.selectedAnswer = null;
+
+    document.getElementById('gameScreen').classList.add('hidden');
+    document.getElementById('resultsScreen').classList.add('hidden');
+    document.getElementById('lobbyScreen').classList.remove('hidden');
+
+    document.getElementById('waitingRoom').classList.add('hidden');
+    document.getElementById('lobbyChoice').classList.remove('hidden');
+
+    const playersList = document.getElementById('playersList');
+    if (playersList) playersList.innerHTML = '';
+    const lobbyCodeDisplay = document.getElementById('lobbyCodeDisplay');
+    if (lobbyCodeDisplay) lobbyCodeDisplay.textContent = '';
+    const playersCount = document.getElementById('playersCount');
+    if (playersCount) playersCount.textContent = '0';
+
+    this.disableOptions(false);
+    this.chat?.leaveLobby?.();
   }
 
   showWaitingRoom(code = null) {
@@ -395,7 +428,8 @@ class QuizGameClient {
       const btns = document.querySelectorAll('.option-btn');
       btns[prevAnswer.answer]?.classList.add('selected');
       const player = this.gameState.players.find(p => p.id === this.playerId);
-      if (player && player.errors >= player.maxErrors) {
+      // Блокируем, если попытки исчерпаны (и уже есть хотя бы одна ошибка)
+      if (player && (player.errors >= player.maxErrors) && player.errors > 0) {
         this.disableOptions(true);
       }
     }
@@ -419,6 +453,22 @@ class QuizGameClient {
     const playerAnswer = this.gameState.answers[this.playerId];
     const isCorrect = playerAnswer ? playerAnswer.isCorrect : false;
     document.getElementById('resultText').textContent = isCorrect ? '✅ Правильно!' : '❌ Неправильно';
+
+    const correctAnswerEl = document.getElementById('correctAnswer');
+    if (correctAnswerEl && Array.isArray(q.options) && typeof q.correctAnswer === 'number') {
+      correctAnswerEl.textContent = `Правильный ответ: ${q.options[q.correctAnswer] ?? ''}`;
+    }
+
+    const explanationEl = document.getElementById('explanationText');
+    if (explanationEl) {
+      if (q.explanation) {
+        explanationEl.textContent = q.explanation;
+        explanationEl.classList.remove('hidden');
+      } else {
+        explanationEl.textContent = '';
+        explanationEl.classList.add('hidden');
+      }
+    }
     
     if (this.isHost) {
       document.getElementById('hostGameControls').classList.remove('hidden');
