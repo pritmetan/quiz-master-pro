@@ -8,7 +8,8 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-app.use(express.static(path.join(__dirname, './client')));
+// Клиент лежит рядом с папкой server: ../client
+app.use(express.static(path.join(__dirname, '..', 'client')));
 
 const lobbies = new Map();
 const socketToLobby = new Map();
@@ -206,7 +207,7 @@ io.on('connection', (socket) => {
         maxErrors: game.settings.maxErrors
       });
       
-      const allAnswered = game.players.every(p => game.answers[p.id] !== undefined);
+      const allAnswered = game.players.every(p => game.answers[p.id]?.isFinal === true);
       if (allAnswered) {
         if (game.timer) { clearInterval(game.timer); game.timer = null; }
         game.gameState = 'answer';
@@ -247,6 +248,8 @@ io.on('connection', (socket) => {
     if (!code) return;
     const lobby = lobbies.get(code);
     if (!lobby) return;
+
+    const beforeCount = lobby.playerIds.length;
     
     if (playerData && playerData.name) {
       const leaveMsg = {
@@ -258,6 +261,8 @@ io.on('connection', (socket) => {
       io.to(code).emit('chatMessage', leaveMsg);
       const msgs = chatMessages.get(code) || [];
       msgs.push(leaveMsg);
+      if (msgs.length > 200) msgs.splice(0, msgs.length - 200);
+      chatMessages.set(code, msgs);
     }
     
     lobby.game.removePlayer(socket.id);
@@ -267,6 +272,16 @@ io.on('connection', (socket) => {
       lobbies.delete(code);
       chatMessages.delete(code);
       console.log('Лобби удалено:', code);
+    } else if (beforeCount === 2 && lobby.playerIds.length === 1) {
+      // Если в лобби было ровно 2 игрока и один вышел — второй тоже покидает лобби
+      const remainingId = lobby.playerIds[0];
+      const remainingSocket = io.sockets.sockets.get(remainingId);
+      if (remainingSocket) remainingSocket.leave(code);
+      socketToLobby.delete(remainingId);
+      io.to(remainingId).emit('lobbyClosed', { message: 'Другой игрок вышел. Лобби закрыто.' });
+      lobbies.delete(code);
+      chatMessages.delete(code);
+      console.log('Лобби закрыто (осталось 1 из 2):', code);
     } else {
       io.to(code).emit('gameStateUpdate', lobby.game.getGameState());
       io.to(code).emit('playerLeft', { message: 'Игрок вышел из игры' });
