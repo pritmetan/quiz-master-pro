@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const io = socketIo(server);
 
 // Клиент лежит рядом с папкой server: ../client
-app.use(express.static(path.join(__dirname, '..', 'client')));
+app.use(express.static(path.join(__dirname, './client')));
 
 const lobbies = new Map();
 const socketToLobby = new Map();
