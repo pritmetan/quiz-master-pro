@@ -94,6 +94,10 @@ class QuizGame {
   submitAnswer(playerId, answerIndex) {
     const question = this.getCurrentQuestion();
     if (!question) return false;
+
+    // Если игрок уже завершил вопрос (правильно ответил или исчерпал ошибки) — игнорируем повторные ответы
+    const prev = this.answers[playerId];
+    if (prev && prev.isFinal) return false;
     
     const isCorrect = answerIndex === question.correctAnswer;
     const maxErrors = this.settings.maxErrors;
@@ -105,7 +109,10 @@ class QuizGame {
       this.playerErrors[playerId] = currentErrors;
     }
     
-    const errorsExceeded = currentErrors > maxErrors;
+    // maxErrors — количество допустимых ошибок на вопрос.
+    // Если игрок набрал maxErrors ошибок (или больше) — попытки исчерпаны.
+    const errorsExceeded = !isCorrect && currentErrors >= maxErrors;
+    const isFinal = isCorrect || errorsExceeded;
     
     // Начисляем очки, если ответ правильный, ошибок не превышено и очки ещё не начислялись
     if (isCorrect && !errorsExceeded && !this.awardedForQuestion.has(playerId)) {
@@ -121,11 +128,12 @@ class QuizGame {
       if (player) player.score = this.scores[playerId];
     }
     
-    // Сохраняем ответ (даже если ошибок превышено)
+    // Сохраняем попытку. Считаем "ответившим" только когда isFinal=true.
     this.answers[playerId] = {
       answer: answerIndex,
       timestamp: Date.now(),
-      isCorrect: isCorrect
+      isCorrect: isCorrect,
+      isFinal: isFinal
     };
     
     return true;
@@ -149,6 +157,17 @@ class QuizGame {
 
   getGameState() {
     const currentQuestion = this.getCurrentQuestion();
+    const questionPayload = currentQuestion ? {
+      id: currentQuestion.id,
+      question: currentQuestion.question,
+      options: currentQuestion.options,
+      category: currentQuestion.category,
+      ...(this.gameState === 'answer' ? {
+        correctAnswer: currentQuestion.correctAnswer,
+        explanation: currentQuestion.explanation
+      } : {})
+    } : null;
+
     return {
       players: this.players.map(p => ({
         id: p.id,
@@ -157,15 +176,10 @@ class QuizGame {
         isHost: p.isHost,
         errors: this.playerErrors[p.id] || 0,
         maxErrors: this.settings.maxErrors,
-        hasAnswered: this.answers[p.id] !== undefined
+        hasAnswered: this.answers[p.id]?.isFinal === true
       })),
       gameState: this.gameState,
-      currentQuestion: currentQuestion ? {
-        id: currentQuestion.id,
-        question: currentQuestion.question,
-        options: currentQuestion.options,
-        category: currentQuestion.category
-      } : null,
+      currentQuestion: questionPayload,
       questionNumber: this.currentQuestion + 1,
       totalQuestions: this.questions.length,
       timeLeft: this.timeLeft,
