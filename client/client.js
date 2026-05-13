@@ -1,33 +1,320 @@
 class QuizGameClient {
   constructor() {
-    this.socket = io();
+    this.socket = io({ withCredentials: true });
     this.playerId = null;
     this.playerName = '';
     this.gameState = null;
     this.isHost = false;
     this.selectedAnswer = null;
+    this.account = null;
+    this.guestMode = false;
     this.currentSettings = {
       questionCount: 10,
       difficulty: 'medium',
       timePerQuestion: 20,
       maxErrors: 1
     };
-    
+
     this.chat = new QuizChat(this.socket, this);
-    
+
     console.log('Клиент викторины инициализирован с чатом');
-    
+
     this.initEventListeners();
     this.setupSocketListeners();
-    
-    setTimeout(() => {
-      document.getElementById('loadingOverlay').classList.add('hidden');
-    }, 1000);
+    void this.bootstrapApp();
+  }
+
+  async bootstrapApp() {
+    await this.loadSession();
+    document.getElementById('loadingOverlay')?.classList.add('hidden');
+  }
+
+  async loadSession() {
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data?.user) {
+        this.account = data.user;
+        this.guestMode = false;
+        this.showMainApp();
+      } else {
+        this.account = null;
+        this.showAuthScreen();
+      }
+    } catch {
+      this.account = null;
+      this.showAuthScreen();
+    }
+    this.applyLobbyNicknameMode();
+    this.refreshAuthNavVisibility();
+  }
+
+  showAuthScreen() {
+    document.getElementById('authScreen')?.classList.remove('hidden');
+    document.getElementById('lobbyScreen')?.classList.add('hidden');
+    document.getElementById('gameScreen')?.classList.add('hidden');
+    document.getElementById('resultsScreen')?.classList.add('hidden');
+    this.refreshAuthNavVisibility();
+  }
+
+  showMainApp() {
+    document.getElementById('authScreen')?.classList.add('hidden');
+    document.getElementById('lobbyScreen')?.classList.remove('hidden');
+    document.getElementById('gameScreen')?.classList.add('hidden');
+    document.getElementById('resultsScreen')?.classList.add('hidden');
+    this.refreshAuthNavVisibility();
+  }
+
+  enterGuestMode() {
+    this.account = null;
+    this.guestMode = true;
+    this.showMainApp();
+    this.applyLobbyNicknameMode();
+    this.refreshAuthNavVisibility();
+  }
+
+  applyLobbyNicknameMode() {
+    const locked = !!this.account && !this.guestMode;
+    const nick = locked ? (this.account.displayName || this.account.login || '').trim() : '';
+    ['Create', 'Join'].forEach((side) => {
+      const inp = document.getElementById(`playerName${side}`);
+      const hint = document.getElementById(`nicknameLockHint${side}`);
+      if (!inp) return;
+      if (locked) {
+        inp.readOnly = true;
+        inp.classList.add('form-input-readonly');
+        inp.value = nick;
+        inp.placeholder = 'Ник из профиля';
+        inp.setAttribute('tabindex', '-1');
+        hint?.classList.remove('hidden');
+      } else {
+        inp.readOnly = false;
+        inp.classList.remove('form-input-readonly');
+        inp.placeholder = 'Ваше имя';
+        inp.removeAttribute('tabindex');
+        hint?.classList.add('hidden');
+      }
+    });
+  }
+
+  getInGameDisplayName(isCreate) {
+    if (this.account && !this.guestMode) {
+      return (this.account.displayName || this.account.login || '').trim();
+    }
+    const id = isCreate ? 'playerNameCreate' : 'playerNameJoin';
+    return document.getElementById(id).value.trim();
+  }
+
+  refreshAuthNavVisibility() {
+    const btn = document.getElementById('switchToAuthBtn');
+    if (!btn) return;
+    const waiting = document.getElementById('waitingRoom');
+    const inWaiting = waiting && !waiting.classList.contains('hidden');
+    const onAuth = document.getElementById('authScreen') && !document.getElementById('authScreen').classList.contains('hidden');
+    const show = this.guestMode && !inWaiting && !onAuth;
+    btn.classList.toggle('hidden', !show);
+  }
+
+  showAuthTab(which) {
+    const loginTab = document.getElementById('authTabLogin');
+    const regTab = document.getElementById('authTabRegister');
+    const loginBlock = document.getElementById('authLoginBlock');
+    const regBlock = document.getElementById('authRegisterBlock');
+    const msg = document.getElementById('authFormMessage');
+    msg?.classList.add('hidden');
+    if (which === 'login') {
+      loginTab?.classList.add('active');
+      regTab?.classList.remove('active');
+      loginBlock?.classList.remove('hidden');
+      regBlock?.classList.add('hidden');
+    } else {
+      regTab?.classList.add('active');
+      loginTab?.classList.remove('active');
+      regBlock?.classList.remove('hidden');
+      loginBlock?.classList.add('hidden');
+    }
+  }
+
+  setAuthFormMessage(text, isError) {
+    const el = document.getElementById('authFormMessage');
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('hidden');
+    el.classList.toggle('auth-inline-message-error', !!isError);
+    el.classList.toggle('auth-inline-message-ok', !isError);
+  }
+
+  async submitAuthRegister() {
+    const login = document.getElementById('authRegUser')?.value.trim() || '';
+    const p1 = document.getElementById('authRegPass')?.value || '';
+    const p2 = document.getElementById('authRegPass2')?.value || '';
+    if (p1 !== p2) {
+      this.setAuthFormMessage('Пароли не совпадают', true);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ login, password: p1 })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Ошибка регистрации');
+      this.setAuthFormMessage(data.message || 'Регистрация успешна. Войдите.', false);
+      this.showAuthTab('login');
+      document.getElementById('authLoginUser').value = login;
+      document.getElementById('authRegPass').value = '';
+      document.getElementById('authRegPass2').value = '';
+    } catch (e) {
+      this.setAuthFormMessage(e.message, true);
+    }
+  }
+
+  async submitAuthLogin() {
+    const login = document.getElementById('authLoginUser')?.value.trim() || '';
+    const password = document.getElementById('authLoginPass')?.value || '';
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ login, password })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Ошибка входа');
+      this.account = data.user;
+      this.guestMode = false;
+      this.showMainApp();
+      this.applyLobbyNicknameMode();
+      this.renderProfilePanel();
+      this.refreshAuthNavVisibility();
+      document.getElementById('authLoginPass').value = '';
+    } catch (e) {
+      this.setAuthFormMessage(e.message, true);
+    }
+  }
+
+  toggleProfilePanel() {
+    const c = document.getElementById('profileContainer');
+    const m = document.getElementById('profileMinimized');
+    const btn = document.getElementById('toggleProfileBtn');
+    if (!c) return;
+    const opening = c.classList.contains('hidden');
+    c.classList.toggle('hidden', !opening);
+    if (opening) {
+      m?.classList.add('hidden');
+      btn?.classList.add('hidden');
+      this.renderProfilePanel();
+    } else {
+      btn?.classList.remove('hidden');
+    }
+  }
+
+  closeProfilePanel() {
+    document.getElementById('profileContainer')?.classList.add('hidden');
+    document.getElementById('profileMinimized')?.classList.add('hidden');
+    document.getElementById('toggleProfileBtn')?.classList.remove('hidden');
+  }
+
+  minimizeProfilePanel() {
+    document.getElementById('profileContainer')?.classList.add('hidden');
+    document.getElementById('profileMinimized')?.classList.remove('hidden');
+    document.getElementById('toggleProfileBtn')?.classList.add('hidden');
+  }
+
+  restoreProfilePanel() {
+    document.getElementById('profileMinimized')?.classList.add('hidden');
+    document.getElementById('profileContainer')?.classList.remove('hidden');
+    this.renderProfilePanel();
+  }
+
+  async renderProfilePanel() {
+    const guestHint = document.getElementById('profileGuestHint');
+    const accBlock = document.getElementById('profileAccountBlock');
+    if (!guestHint || !accBlock) return;
+
+    if (!this.account || this.guestMode) {
+      guestHint.classList.remove('hidden');
+      accBlock.classList.add('hidden');
+      return;
+    }
+
+    guestHint.classList.add('hidden');
+    accBlock.classList.remove('hidden');
+
+    document.getElementById('profileLoginDisplay').textContent = this.account.login;
+    const inp = document.getElementById('profileDisplayNameInput');
+    if (inp) inp.value = this.account.displayName || this.account.login || '';
+
+    const st = this.account.stats || {};
+    document.getElementById('statGames').textContent = st.gamesPlayed ?? 0;
+    document.getElementById('statWins').textContent = st.gamesWon ?? 0;
+    document.getElementById('statScore').textContent = st.totalScore ?? 0;
+
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data?.user) {
+        this.account = data.user;
+        document.getElementById('statGames').textContent = data.user.stats?.gamesPlayed ?? 0;
+        document.getElementById('statWins').textContent = data.user.stats?.gamesWon ?? 0;
+        document.getElementById('statScore').textContent = data.user.stats?.totalScore ?? 0;
+        if (inp) inp.value = data.user.displayName || data.user.login || '';
+      }
+    } catch (_) {}
+  }
+
+  async saveProfileNickname() {
+    if (!this.account || this.guestMode) return;
+    const displayName = document.getElementById('profileDisplayNameInput')?.value.trim() || '';
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ displayName })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Не удалось сохранить');
+      this.account = data.user;
+      this.applyLobbyNicknameMode();
+      this.showMessage('✅', 'Ник сохранён. В текущей комнате имя не меняется — только в новой сессии.');
+      setTimeout(() => this.closeMessage(), 2500);
+    } catch (e) {
+      this.showMessage('❌', e.message);
+    }
+  }
+
+  logoutAccount() {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).finally(() => {
+      window.location.reload();
+    });
   }
 
   initEventListeners() {
     document.getElementById('tabCreate').addEventListener('click', () => this.showLobbyTab('create'));
     document.getElementById('tabJoin').addEventListener('click', () => this.showLobbyTab('join'));
+
+    document.getElementById('authTabLogin')?.addEventListener('click', () => this.showAuthTab('login'));
+    document.getElementById('authTabRegister')?.addEventListener('click', () => this.showAuthTab('register'));
+    document.getElementById('authLoginSubmit')?.addEventListener('click', () => this.submitAuthLogin());
+    document.getElementById('authRegisterSubmit')?.addEventListener('click', () => this.submitAuthRegister());
+    document.getElementById('authGuestBtn')?.addEventListener('click', () => this.enterGuestMode());
+    document.getElementById('switchToAuthBtn')?.addEventListener('click', () => {
+      if (this.playerId) {
+        this.showMessage('⚠️', 'Сначала выйдите из комнаты (закройте вкладку или дождитесь окончания игры).');
+        return;
+      }
+      this.showAuthScreen();
+    });
+
+    document.getElementById('toggleProfileBtn')?.addEventListener('click', () => this.toggleProfilePanel());
+    document.getElementById('profileCloseBtn')?.addEventListener('click', () => this.closeProfilePanel());
+    document.getElementById('profileMinimizeBtn')?.addEventListener('click', () => this.minimizeProfilePanel());
+    document.getElementById('profileRestoreBtn')?.addEventListener('click', () => this.restoreProfilePanel());
+    document.getElementById('profileSaveNicknameBtn')?.addEventListener('click', () => this.saveProfileNickname());
+    document.getElementById('profileLogoutBtn')?.addEventListener('click', () => this.logoutAccount());
 
     document.getElementById('createLobbyBtn').addEventListener('click', () => this.createLobby());
     document.getElementById('joinLobbyBtn').addEventListener('click', () => this.joinLobby());
@@ -66,7 +353,7 @@ class QuizGameClient {
   setupSocketListeners() {
     this.socket.on('lobbyCreated', (data) => {
       this.playerId = data.playerId;
-      this.playerName = document.getElementById('playerNameCreate').value.trim();
+      this.playerName = this.getInGameDisplayName(true);
       this.isHost = true;
       this.showWaitingRoom(data.code);
       this.showSettingsPanel();
@@ -76,7 +363,7 @@ class QuizGameClient {
 
     this.socket.on('gameJoined', (data) => {
       this.playerId = data.playerId;
-      this.playerName = document.getElementById('playerNameJoin').value.trim();
+      this.playerName = this.getInGameDisplayName(false);
       this.isHost = false;
       this.showWaitingRoom();
       this.chat.setPlayerData(this.playerId, this.playerName);
@@ -128,6 +415,7 @@ class QuizGameClient {
 
     this.socket.on('gameFinished', (results) => {
       this.showResults(results);
+      void this.reloadAccountStats();
     });
 
     this.socket.on('playerLeft', (data) => {
@@ -150,10 +438,12 @@ class QuizGameClient {
   }
 
   showLobbyTab(tab) {
+    const root = document.getElementById('lobbyChoice');
     const createBlock = document.getElementById('createLobbyBlock');
     const joinBlock = document.getElementById('joinLobbyBlock');
-    document.querySelectorAll('.lobby-tab').forEach(t => t.classList.remove('active'));
-    
+    if (!root || !createBlock || !joinBlock) return;
+    root.querySelectorAll('.lobby-tab').forEach((t) => t.classList.remove('active'));
+
     if (tab === 'create') {
       createBlock.classList.remove('hidden');
       joinBlock.classList.add('hidden');
@@ -168,9 +458,9 @@ class QuizGameClient {
   }
 
   createLobby() {
-    const name = document.getElementById('playerNameCreate').value.trim();
+    const name = this.getInGameDisplayName(true);
     if (!name) {
-      this.showMessage('⚠️', 'Введите ваше имя');
+      this.showMessage('⚠️', this.account && !this.guestMode ? 'Задайте ник в профиле' : 'Введите ваше имя');
       return;
     }
     this.playerName = name;
@@ -178,18 +468,18 @@ class QuizGameClient {
   }
 
   joinLobby() {
-    const name = document.getElementById('playerNameJoin').value.trim();
+    const name = this.getInGameDisplayName(false);
     const code = document.getElementById('lobbyCodeInput').value.trim().toUpperCase();
-    
+
     if (!name) {
-      this.showMessage('⚠️', 'Введите ваше имя');
+      this.showMessage('⚠️', this.account && !this.guestMode ? 'Задайте ник в профиле' : 'Введите ваше имя');
       return;
     }
     if (!code || code.length !== 6) {
       this.showMessage('⚠️', 'Введите код из 6 символов');
       return;
     }
-    
+
     this.playerName = name;
     this.socket.emit('joinLobby', { playerName: name, lobbyCode: code });
   }
@@ -259,7 +549,7 @@ class QuizGameClient {
     document.getElementById('lobbyScreen').classList.remove('hidden');
     document.getElementById('waitingRoom').classList.remove('hidden');
     this.selectedAnswer = null;
-    // Чат не открывается автоматически, остаётся в текущем состоянии
+    this.refreshAuthNavVisibility();
   }
 
   leaveLobbyToMain() {
@@ -285,6 +575,7 @@ class QuizGameClient {
 
     this.disableOptions(false);
     this.chat?.leaveLobby?.();
+    this.refreshAuthNavVisibility();
   }
 
   showWaitingRoom(code = null) {
@@ -297,8 +588,8 @@ class QuizGameClient {
       document.getElementById('hostControls').classList.remove('hidden');
       document.getElementById('gameSettings').classList.remove('hidden');
     }
-    
-    // Чат не открывается автоматически
+
+    this.refreshAuthNavVisibility();
   }
 
   showSettingsPanel() {
@@ -540,6 +831,15 @@ class QuizGameClient {
 
   closeMessage() {
     document.getElementById('messageOverlay')?.classList.add('hidden');
+  }
+
+  async reloadAccountStats() {
+    if (!this.account || this.guestMode) return;
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data?.user) this.account = data.user;
+    } catch (_) {}
   }
 }
 
