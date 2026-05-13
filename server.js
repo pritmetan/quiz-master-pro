@@ -2,14 +2,47 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 const QuizGame = require('./quiz');
+const { router: authRouter } = require('./authRoutes');
+const { getUserDbIdFromCookieHeader } = require('./authCookie');
+const { recordQuizGameStats } = require('./statsRecorder');
+
+require('./db');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// Клиент лежит рядом с папкой server: ../client
-app.use(express.static(path.join(__dirname, './client')));
+const clientDir = path.join(__dirname, '..', 'client');
+
+app.use(express.json({ limit: '200kb' }));
+app.use(cookieParser());
+
+app.use('/api/auth', authRouter);
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(clientDir, 'index.html'));
+});
+
+app.get('/guest', (req, res) => {
+  res.redirect(302, '/');
+});
+
+app.get('/index.html', (req, res) => {
+  res.redirect(302, '/');
+});
+
+app.use(express.static(clientDir));
+
+io.use((socket, next) => {
+  try {
+    socket.userDbId = getUserDbIdFromCookieHeader(socket.handshake.headers.cookie);
+  } catch {
+    socket.userDbId = null;
+  }
+  next();
+});
 
 const lobbies = new Map();
 const socketToLobby = new Map();
@@ -39,7 +72,7 @@ io.on('connection', (socket) => {
     
     const code = generateLobbyCode();
     const game = new QuizGame();
-    game.addPlayer(socket.id, name);
+    game.addPlayer(socket.id, name, socket.userDbId || null);
     
     lobbies.set(code, { game, playerIds: [socket.id] });
     socketToLobby.set(socket.id, code);
@@ -67,7 +100,7 @@ io.on('connection', (socket) => {
     if (!lobby) return socket.emit('lobbyError', { message: 'Лобби не найдено' });
     if (lobby.game.players.length >= 8) return socket.emit('lobbyError', { message: 'Лобби заполнено' });
     
-    const success = lobby.game.addPlayer(socket.id, name);
+    const success = lobby.game.addPlayer(socket.id, name, socket.userDbId || null);
     if (!success) return socket.emit('lobbyError', { message: 'Не удалось присоединиться' });
     
     lobby.playerIds.push(socket.id);
@@ -234,7 +267,13 @@ io.on('connection', (socket) => {
     } else {
       game.gameState = 'results';
       io.to(code).emit('gameStateUpdate', game.getGameState());
-      io.to(code).emit('gameFinished', game.getResults());
+      const results = game.getResults();
+      try {
+        recordQuizGameStats(game);
+      } catch (e) {
+        console.error('recordQuizGameStats', e);
+      }
+      io.to(code).emit('gameFinished', results);
     }
   });
 
