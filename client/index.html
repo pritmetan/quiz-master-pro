@@ -17,6 +17,11 @@
         </div>
     </div>
 
+    <!-- Профиль (как чат, слева) -->
+    <button type="button" id="toggleProfileBtn" class="profile-toggle-btn" title="Профиль">
+        <i class="fas fa-id-card"></i>
+    </button>
+
     <!-- Кнопка открытия чата (видна всегда) -->
     <button id="toggleChatBtn" class="chat-toggle-btn">
         <i class="fas fa-comments"></i>
@@ -25,6 +30,99 @@
 
     <!-- Основной контейнер -->
     <div class="game-container">
+        <!-- Панель профиля -->
+        <div id="profileContainer" class="profile-container hidden">
+            <div class="profile-header">
+                <h3><i class="fas fa-user-circle"></i> Профиль</h3>
+                <div class="profile-actions">
+                    <button type="button" id="profileMinimizeBtn" class="chat-action-btn" title="Свернуть">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button type="button" id="profileCloseBtn" class="chat-action-btn" title="Закрыть">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="profile-body" id="profileBody">
+                <p class="profile-guest-hint hidden" id="profileGuestHint">
+                    Вы вошли без аккаунта. Статистика и ник в профиле недоступны — зарегистрируйтесь на главном экране.
+                </p>
+                <div id="profileAccountBlock" class="hidden">
+                    <div class="profile-field">
+                        <span class="profile-label">Логин</span>
+                        <span id="profileLoginDisplay" class="profile-value"></span>
+                    </div>
+                    <div class="profile-field">
+                        <span class="profile-label">Ник в игре</span>
+                        <input type="text" id="profileDisplayNameInput" class="form-input" maxlength="20" placeholder="Ник для лобби и игры">
+                        <button type="button" id="profileSaveNicknameBtn" class="btn btn-primary" style="margin-top:10px;width:100%;">
+                            <i class="fas fa-save"></i> Сохранить ник
+                        </button>
+                    </div>
+                    <div class="profile-stats" id="profileStatsBlock">
+                        <h4><i class="fas fa-chart-bar"></i> Статистика</h4>
+                        <div class="profile-stats-grid">
+                            <div class="profile-stat"><span id="statGames">0</span><small>Игр</small></div>
+                            <div class="profile-stat"><span id="statWins">0</span><small>Побед</small></div>
+                            <div class="profile-stat"><span id="statScore">0</span><small>Очков всего</small></div>
+                        </div>
+                    </div>
+                    <button type="button" id="profileLogoutBtn" class="btn btn-secondary" style="margin-top:16px;width:100%;">
+                        <i class="fas fa-sign-out-alt"></i> Выйти из аккаунта
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="profileMinimized" class="profile-minimized hidden">
+            <button type="button" id="profileRestoreBtn" class="profile-restore-btn" title="Профиль">
+                <i class="fas fa-id-card"></i>
+            </button>
+        </div>
+
+        <!-- SPA: вход / регистрация (тот же стиль, что лобби) -->
+        <div id="authScreen" class="lobby-screen hidden">
+            <div class="lobby-wrapper">
+                <div class="game-title">
+                    <h1><i class="fas fa-brain"></i> Quiz Master Pro</h1>
+                    <p>Войдите или зарегистрируйтесь — либо играйте без аккаунта</p>
+                </div>
+                <div id="authFormMessage" class="auth-inline-message hidden"></div>
+                <div class="lobby-tabs">
+                    <button type="button" id="authTabLogin" class="lobby-tab active">
+                        <i class="fas fa-sign-in-alt"></i> Вход
+                    </button>
+                    <button type="button" id="authTabRegister" class="lobby-tab">
+                        <i class="fas fa-user-plus"></i> Регистрация
+                    </button>
+                </div>
+                <div id="authLoginBlock" class="lobby-block">
+                    <div class="form-group">
+                        <input type="text" id="authLoginUser" class="form-input" placeholder="Логин" maxlength="24" autocomplete="username">
+                        <input type="password" id="authLoginPass" class="form-input" placeholder="Пароль" maxlength="128" autocomplete="current-password">
+                        <button type="button" id="authLoginSubmit" class="btn btn-primary">
+                            <i class="fas fa-sign-in-alt"></i> Войти
+                        </button>
+                    </div>
+                </div>
+                <div id="authRegisterBlock" class="lobby-block hidden">
+                    <div class="form-group">
+                        <input type="text" id="authRegUser" class="form-input" placeholder="Логин" maxlength="24" autocomplete="username">
+                        <input type="password" id="authRegPass" class="form-input" placeholder="Пароль" maxlength="128" autocomplete="new-password">
+                        <input type="password" id="authRegPass2" class="form-input" placeholder="Повтор пароля" maxlength="128" autocomplete="new-password">
+                        <button type="button" id="authRegisterSubmit" class="btn btn-primary">
+                            <i class="fas fa-user-plus"></i> Зарегистрироваться
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 24px;">
+                    <button type="button" id="authGuestBtn" class="btn btn-secondary" style="width:100%;">
+                        <i class="fas fa-user-secret"></i> Играть без аккаунта (инкогнито)
+                    </button>
+                    <p class="hint" style="text-align:center;margin-top:12px;">Тот же экран: введите имя и создайте или войдите в комнату</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Чат боковая панель -->
         <div id="chatContainer" class="chat-container hidden">
             <div class="chat-header">
@@ -80,11 +178,14 @@
         </div>
 
         <!-- ЭКРАН ЛОББИ -->
-        <div id="lobbyScreen" class="lobby-screen fade-in">
+        <div id="lobbyScreen" class="lobby-screen fade-in hidden">
             <div class="lobby-wrapper">
                 <div class="game-title">
                     <h1><i class="fas fa-brain"></i> Quiz Master Pro</h1>
                     <p>Улучшенная сетевая викторина с настройками игры и чатом</p>
+                    <button type="button" id="switchToAuthBtn" class="btn btn-secondary hidden" style="margin-top:12px;padding:10px 18px;font-size:0.9rem;">
+                        <i class="fas fa-sign-in-alt"></i> Вход / регистрация
+                    </button>
                 </div>
 
                 <div id="lobbyChoice">
@@ -102,6 +203,9 @@
                         <div class="form-group">
                             <input type="text" id="playerNameCreate" class="form-input" 
                                    placeholder="Ваше имя" maxlength="20">
+                            <p id="nicknameLockHintCreate" class="hint hidden" style="margin:0;font-size:0.85rem;color:rgba(255,255,255,0.55);">
+                                Ник в игре задаётся только в профиле (не совпадает с логином).
+                            </p>
                             <button id="createLobbyBtn" class="btn btn-primary">
                                 <i class="fas fa-gamepad"></i> Создать комнату
                             </button>
@@ -113,6 +217,9 @@
                         <div class="form-group">
                             <input type="text" id="playerNameJoin" class="form-input" 
                                    placeholder="Ваше имя" maxlength="20">
+                            <p id="nicknameLockHintJoin" class="hint hidden" style="margin:0;font-size:0.85rem;color:rgba(255,255,255,0.55);">
+                                Ник в игре задаётся только в профиле.
+                            </p>
                             <input type="text" id="lobbyCodeInput" class="form-input" 
                                    placeholder="Код комнаты" maxlength="6">
                             <button id="joinLobbyBtn" class="btn btn-primary">
