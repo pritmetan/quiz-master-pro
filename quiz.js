@@ -41,14 +41,15 @@ class QuizGame {
     return true;
   }
 
-  addPlayer(playerId, playerName) {
+  addPlayer(playerId, playerName, userDbId = null) {
     if (this.players.length >= 8) return false;
     const player = {
       id: playerId,
       name: playerName,
       score: 0,
       isHost: this.players.length === 0,
-      errors: 0
+      errors: 0,
+      userDbId: userDbId || null
     };
     this.players.push(player);
     this.scores[playerId] = 0;
