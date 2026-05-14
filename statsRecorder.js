@@ -1,207 +1,64 @@
-const { getQuestionsByDifficulty } = require('./questions');
+const { db } = require('./db');
 
-class QuizGame {
-  constructor(settings = {}) {
-    this.players = [];
-    this.host = null;
-    this.gameState = 'waiting';
-    this.currentQuestion = 0;
-    this.questions = [];
-    this.timer = null;
-    this.timeLeft = 20;
-    this.scores = {};
-    this.answers = {};
-    this.playerErrors = {}; // Ошибки на текущий вопрос
-    this.awardedForQuestion = new Set(); // Игроки, уже получившие очки за текущий вопрос
-    this.statsRecorded = false; // Флаг, что статистика уже записана
+/**
+ * После окончания партии обновляет SQLite для зарегистрированных игроков (по userDbId).
+ * Гарантирует что статистика записывается только один раз и только для авторизованных пользователей.
+ */
+function recordQuizGameStats(game) {
+  // Защита от повторного вызова
+  if (game.statsRecorded) {
+    console.log('[Stats] Статистика уже была записана для этой игры, пропускаем');
+    return;
+  }
+
+  const results = game.getResults();
+  const sorted = results.players;
+  if (!sorted.length) return;
+
+  // Находим победителя
+  const winnerId = sorted[0].id;
+  
+  // Подготавливаем SQL запросы
+  const incPlay = db.prepare(`
+    UPDATE users
+    SET games_played = games_played + 1,
+        total_score = total_score + ?
+    WHERE id = ?
+  `);
+  const incWin = db.prepare(`
+    UPDATE users SET games_won = games_won + 1 WHERE id = ?
+  `);
+
+  // Записываем статистику только для авторизованных игроков
+  let recordedCount = 0;
+  for (const p of sorted) {
+    // Ищем соответствующего игрока в объекте игры
+    const gp = game.players.find((x) => x.id === p.id);
     
-    this.settings = {
-      questionCount: 10,
-      difficulty: 'medium',
-      timePerQuestion: 20,
-      maxErrors: 1,
-      ...settings
-    };
-    
-    this.initQuestions();
+    // Пропускаем если игрок не найден или не авторизован
+    if (!gp || !gp.userDbId) {
+      console.log(`[Stats] Игрок ${gp?.name || p.id} пропущен (не авторизован)`);
+      continue;
+    }
+
+    // Обновляем статистику для авторизованного игрока
+    try {
+      incPlay.run(p.score, gp.userDbId);
+      if (p.id === winnerId) {
+        incWin.run(gp.userDbId);
+        console.log(`[Stats] ${gp.name} (ID:${gp.userDbId}): +1 игра, +1 победа, +${p.score} очков`);
+      } else {
+        console.log(`[Stats] ${gp.name} (ID:${gp.userDbId}): +1 игра, +${p.score} очков`);
+      }
+      recordedCount++;
+    } catch (e) {
+      console.error(`[Stats] Ошибка при обновлении статистики для ${gp.name}:`, e.message);
+    }
   }
 
-  initQuestions() {
-    console.log(`Инициализация вопросов: сложность=${this.settings.difficulty}, количество=${this.settings.questionCount}`);
-    this.questions = getQuestionsByDifficulty(
-      this.settings.difficulty, 
-      this.settings.questionCount
-    );
-    this.timeLeft = this.settings.timePerQuestion;
-  }
-
-  updateSettings(newSettings) {
-    console.log('Обновление настроек:', newSettings);
-    this.settings = { ...this.settings, ...newSettings };
-    this.initQuestions();
-    return true;
-  }
-
-addPlayer(playerId, playerName, userDbId = null) {
-    if (this.players.length >= 8) return false;
-    // Запрещаем добавлять одного и того же пользователя (по userDbId) дважды
-    if (userDbId && this.players.some(p => p.userDbId === userDbId)) return false;
-    const player = {
-        id: playerId,
-        name: playerName,
-        score: 0,
-        isHost: this.players.length === 0,
-        errors: 0,
-        userDbId: userDbId || null
-    };
-    this.players.push(player);
-    this.scores[playerId] = 0;
-    this.playerErrors[playerId] = 0;
-    if (player.isHost) this.host = playerId;
-    return true;
+  // Отмечаем что статистика записана
+  game.statsRecorded = true;
+  console.log(`[Stats] Статистика записана для ${recordedCount} авторизованных игроков`);
 }
 
-  removePlayer(playerId) {
-    this.players = this.players.filter(p => p.id !== playerId);
-    delete this.scores[playerId];
-    delete this.playerErrors[playerId];
-    if (playerId === this.host && this.players.length > 0) {
-      this.players[0].isHost = true;
-      this.host = this.players[0].id;
-    }
-  }
-
-  startGame() {
-    if (this.players.length < 2) return false;
-    this.gameState = 'starting';
-    this.currentQuestion = 0;
-    this.playerErrors = {};
-    this.answers = {};
-    this.awardedForQuestion.clear();
-    this.statsRecorded = false; // Сбрасываем флаг для новой игры
-    this.initQuestions();
-    this.players.forEach(player => {
-      this.scores[player.id] = 0;
-      this.playerErrors[player.id] = 0;
-      player.score = 0;
-      player.errors = 0;
-    });
-    this.timeLeft = this.settings.timePerQuestion;
-    this.answers = {};
-    return true;
-  }
-
-  getCurrentQuestion() {
-    if (this.currentQuestion >= this.questions.length) return null;
-    return this.questions[this.currentQuestion];
-  }
-
-  submitAnswer(playerId, answerIndex) {
-    const question = this.getCurrentQuestion();
-    if (!question) return false;
-
-    // Если игрок уже завершил вопрос (правильно ответил или исчерпал ошибки) — игнорируем повторные ответы
-    const prev = this.answers[playerId];
-    if (prev && prev.isFinal) return false;
-    
-    const isCorrect = answerIndex === question.correctAnswer;
-    const maxErrors = this.settings.maxErrors;
-    let currentErrors = this.playerErrors[playerId] || 0;
-    
-    // Если ответ неправильный, увеличиваем счётчик ошибок
-    if (!isCorrect) {
-      currentErrors++;
-      this.playerErrors[playerId] = currentErrors;
-    }
-    
-    // maxErrors — количество допустимых ошибок на вопрос.
-    // Если игрок набрал maxErrors ошибок (или больше) — попытки исчерпаны.
-    const errorsExceeded = !isCorrect && currentErrors >= maxErrors;
-    const isFinal = isCorrect || errorsExceeded;
-    
-    // Начисляем очки, если ответ правильный, ошибок не превышено и очки ещё не начислялись
-    if (isCorrect && !errorsExceeded && !this.awardedForQuestion.has(playerId)) {
-      const timeBonus = Math.max(0, this.timeLeft);
-      const basePoints = this.settings.difficulty === 'easy' ? 50 : 
-                        this.settings.difficulty === 'medium' ? 100 : 150;
-      const points = basePoints + timeBonus;
-      
-      this.scores[playerId] += points;
-      this.awardedForQuestion.add(playerId);
-      
-      const player = this.players.find(p => p.id === playerId);
-      if (player) player.score = this.scores[playerId];
-    }
-    
-    // Сохраняем попытку. Считаем "ответившим" только когда isFinal=true.
-    this.answers[playerId] = {
-      answer: answerIndex,
-      timestamp: Date.now(),
-      isCorrect: isCorrect,
-      isFinal: isFinal
-    };
-    
-    return true;
-  }
-
-  nextQuestion() {
-    this.currentQuestion++;
-    this.answers = {};
-    this.playerErrors = {};
-    this.awardedForQuestion.clear();
-    this.timeLeft = this.settings.timePerQuestion;
-    
-    if (this.currentQuestion >= this.questions.length) {
-      this.gameState = 'results';
-      return false;
-    }
-    
-    this.gameState = 'question';
-    return true;
-  }
-
-  getGameState() {
-    const currentQuestion = this.getCurrentQuestion();
-    const questionPayload = currentQuestion ? {
-      id: currentQuestion.id,
-      question: currentQuestion.question,
-      options: currentQuestion.options,
-      category: currentQuestion.category,
-      ...(this.gameState === 'answer' ? {
-        correctAnswer: currentQuestion.correctAnswer,
-        explanation: currentQuestion.explanation
-      } : {})
-    } : null;
-
-    return {
-      players: this.players.map(p => ({
-        id: p.id,
-        name: p.name,
-        score: p.score,
-        isHost: p.isHost,
-        errors: this.playerErrors[p.id] || 0,
-        maxErrors: this.settings.maxErrors,
-        hasAnswered: this.answers[p.id]?.isFinal === true
-      })),
-      gameState: this.gameState,
-      currentQuestion: questionPayload,
-      questionNumber: this.currentQuestion + 1,
-      totalQuestions: this.questions.length,
-      timeLeft: this.timeLeft,
-      answers: this.answers,
-      scores: this.scores,
-      settings: this.settings
-    };
-  }
-
-  getResults() {
-    const sortedPlayers = [...this.players].sort((a, b) => b.score - a.score);
-    return {
-      players: sortedPlayers,
-      winner: sortedPlayers[0],
-      settings: this.settings
-    };
-  }
-}
-
-module.exports = QuizGame;
+module.exports = { recordQuizGameStats };
