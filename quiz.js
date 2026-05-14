@@ -13,6 +13,7 @@ class QuizGame {
     this.answers = {};
     this.playerErrors = {}; // Ошибки на текущий вопрос
     this.awardedForQuestion = new Set(); // Игроки, уже получившие очки за текущий вопрос
+    this.statsRecorded = false; // Флаг, что статистика уже записана
     
     this.settings = {
       questionCount: 10,
@@ -41,22 +42,24 @@ class QuizGame {
     return true;
   }
 
-  addPlayer(playerId, playerName, userDbId = null) {
+addPlayer(playerId, playerName, userDbId = null) {
     if (this.players.length >= 8) return false;
+    // Запрещаем добавлять одного и того же пользователя (по userDbId) дважды
+    if (userDbId && this.players.some(p => p.userDbId === userDbId)) return false;
     const player = {
-      id: playerId,
-      name: playerName,
-      score: 0,
-      isHost: this.players.length === 0,
-      errors: 0,
-      userDbId: userDbId || null
+        id: playerId,
+        name: playerName,
+        score: 0,
+        isHost: this.players.length === 0,
+        errors: 0,
+        userDbId: userDbId || null
     };
     this.players.push(player);
     this.scores[playerId] = 0;
     this.playerErrors[playerId] = 0;
     if (player.isHost) this.host = playerId;
     return true;
-  }
+}
 
   removePlayer(playerId) {
     this.players = this.players.filter(p => p.id !== playerId);
@@ -75,6 +78,7 @@ class QuizGame {
     this.playerErrors = {};
     this.answers = {};
     this.awardedForQuestion.clear();
+    this.statsRecorded = false; // Сбрасываем флаг для новой игры
     this.initQuestions();
     this.players.forEach(player => {
       this.scores[player.id] = 0;
