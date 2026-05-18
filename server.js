@@ -14,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const clientDir = path.join(__dirname, '..', 'client');
+const clientDir = path.join(__dirname, 'client');
 
 app.use(express.json({ limit: '200kb' }));
 app.use(cookieParser());
