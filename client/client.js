@@ -36,6 +36,7 @@ class QuizGameClient {
       if (data?.user) {
         this.account = data.user;
         this.guestMode = false;
+        await this.reconnectSocket();
         this.showMainApp();
       } else {
         this.account = null;
@@ -47,6 +48,30 @@ class QuizGameClient {
     }
     this.applyLobbyNicknameMode();
     this.refreshAuthNavVisibility();
+  }
+
+  /** После входа cookie обновляется, но WebSocket нужно переподключить, иначе userDbId на сервере = null */
+  reconnectSocket() {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.socket.off('connect', onConnect);
+        this.socket.emit('syncAuth');
+        resolve();
+      };
+      const onConnect = () => finish();
+      const timer = setTimeout(finish, 8000);
+      if (this.socket.connected) {
+        this.socket.once('connect', onConnect);
+        this.socket.disconnect();
+      } else {
+        this.socket.once('connect', onConnect);
+        this.socket.connect();
+      }
+    });
   }
 
   showAuthScreen() {
@@ -185,6 +210,7 @@ class QuizGameClient {
       if (!res.ok) throw new Error(data.message || 'Ошибка входа');
       this.account = data.user;
       this.guestMode = false;
+      await this.reconnectSocket();
       this.showMainApp();
       this.applyLobbyNicknameMode();
       this.renderProfilePanel();
