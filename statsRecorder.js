@@ -1,24 +1,40 @@
 const { db } = require('./db');
 
+function getPlayerScore(game, player) {
+  const fromPlayer = Number(player.score);
+  if (Number.isFinite(fromPlayer) && fromPlayer >= 0) return fromPlayer;
+  const fromScores = Number(game.scores[player.id]);
+  if (Number.isFinite(fromScores) && fromScores >= 0) return fromScores;
+  return 0;
+}
+
+function findWinner(game) {
+  let winner = null;
+  let bestScore = -1;
+  for (const p of game.players) {
+    const score = getPlayerScore(game, p);
+    if (score > bestScore) {
+      bestScore = score;
+      winner = p;
+    }
+  }
+  return winner;
+}
+
 /**
  * После окончания партии обновляет SQLite для зарегистрированных игроков (по userDbId).
- * Гарантирует что статистика записывается только один раз и только для авторизованных пользователей.
  */
 function recordQuizGameStats(game) {
-  // Защита от повторного вызова
   if (game.statsRecorded) {
-    console.log('[Stats] Статистика уже была записана для этой игры, пропускаем');
+    console.log('[Stats] Статистика уже записана, пропуск');
     return;
   }
 
-  const results = game.getResults();
-  const sorted = results.players;
-  if (!sorted.length) return;
+  if (!game.players.length) return;
 
-  // Находим победителя
-  const winnerId = sorted[0].id;
-  
-  // Подготавливаем SQL запросы
+  const winner = findWinner(game);
+  const winnerId = winner?.id ?? null;
+
   const incPlay = db.prepare(`
     UPDATE users
     SET games_played = games_played + 1,
@@ -29,36 +45,33 @@ function recordQuizGameStats(game) {
     UPDATE users SET games_won = games_won + 1 WHERE id = ?
   `);
 
-  // Записываем статистику только для авторизованных игроков
   let recordedCount = 0;
-  for (const p of sorted) {
-    // Ищем соответствующего игрока в объекте игры
-    const gp = game.players.find((x) => x.id === p.id);
-    
-    // Пропускаем если игрок не найден или не авторизован
-    if (!gp || !gp.userDbId) {
-      console.log(`[Stats] Игрок ${gp?.name || p.id} пропущен (не авторизован)`);
+
+  for (const gp of game.players) {
+    if (!gp.userDbId) {
+      console.log(`[Stats] ${gp.name} — гость, статистика не пишется`);
       continue;
     }
 
-    // Обновляем статистику для авторизованного игрока
+    const score = getPlayerScore(game, gp);
+    const isWinner = gp.id === winnerId;
+
     try {
-      incPlay.run(p.score, gp.userDbId);
-      if (p.id === winnerId) {
+      incPlay.run(score, gp.userDbId);
+      if (isWinner) {
         incWin.run(gp.userDbId);
-        console.log(`[Stats] ${gp.name} (ID:${gp.userDbId}): +1 игра, +1 победа, +${p.score} очков`);
+        console.log(`[Stats] ${gp.name} (user #${gp.userDbId}): +1 игра, +1 победа, +${score} очков`);
       } else {
-        console.log(`[Stats] ${gp.name} (ID:${gp.userDbId}): +1 игра, +${p.score} очков`);
+        console.log(`[Stats] ${gp.name} (user #${gp.userDbId}): +1 игра, +${score} очков`);
       }
       recordedCount++;
     } catch (e) {
-      console.error(`[Stats] Ошибка при обновлении статистики для ${gp.name}:`, e.message);
+      console.error(`[Stats] Ошибка для ${gp.name}:`, e.message);
     }
   }
 
-  // Отмечаем что статистика записана
   game.statsRecorded = true;
-  console.log(`[Stats] Статистика записана для ${recordedCount} авторизованных игроков`);
+  console.log(`[Stats] Записано для ${recordedCount} игрок(ов), победитель: ${winner?.name ?? '—'}`);
 }
 
 module.exports = { recordQuizGameStats };
