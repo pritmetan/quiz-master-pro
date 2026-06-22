@@ -824,6 +824,8 @@ body {
     flex-direction: column;
     box-shadow: -5px 0 25px rgba(0, 0, 0, 0.5);
     transition: transform 0.3s ease;
+    max-height: 100vh;
+    overflow: hidden;
 }
 
 .chat-header {
@@ -1162,26 +1164,117 @@ body {
 /* Адаптивность чата */
 @media (max-width: 768px) {
     .chat-container {
+        position: fixed;
         width: 100%;
-        right: -100%;
+        max-width: 100%;
+        height: 100vh;
+        right: 0;
+        top: 0;
+        border-left: none;
+        border-radius: 0;
+        z-index: 999;
+        display: flex;
+        flex-direction: column;
+        box-shadow: none;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
     }
     
-    .chat-container.show {
-        right: 0;
+    .chat-container:not(.hidden) {
+        transform: translateX(0);
     }
     
     .chat-toggle-btn {
-        top: 10px;
-        right: 10px;
-        width: 50px;
-        height: 50px;
+        top: 15px;
+        right: 15px;
+        width: 55px;
+        height: 55px;
+        font-size: 1.3rem;
     }
     
     .chat-minimized {
         width: 100px;
+        height: 45px;
+        top: 15px;
+        right: 15px;
+        font-size: 0.85rem;
+    }
+    
+    .chat-header {
+        padding: 12px 15px;
+    }
+    
+    .chat-header h3 {
+        font-size: 1rem;
+    }
+    
+    .chat-messages {
+        padding: 15px;
+        gap: 12px;
+    }
+    
+    .chat-message {
+        max-width: 90%;
+        padding: 10px 12px;
+        font-size: 0.95rem;
+    }
+    
+    .chat-input-area {
+        padding: 12px 15px;
+    }
+    
+    .chat-input-wrapper {
+        gap: 8px;
+    }
+    
+    .chat-input {
+        padding: 10px 12px;
+        font-size: 1rem;
+    }
+    
+    .chat-send-btn {
+        width: 45px;
         height: 40px;
-        top: 10px;
-        right: 10px;
+        font-size: 1.1rem;
+    }
+    
+    .profile-toggle-btn {
+        width: 55px;
+        height: 55px;
+        top: 75px;
+    }
+}
+
+@media (max-width: 600px) {
+    .chat-toggle-btn {
+        top: 12px;
+        right: 12px;
+        width: 50px;
+        height: 50px;
+        font-size: 1.2rem;
+    }
+    
+    .profile-toggle-btn {
+        top: 65px;
+        right: 12px;
+    }
+    
+    .chat-container {
+        width: 100vw;
+    }
+    
+    .chat-message {
+        max-width: 85%;
+        font-size: 0.9rem;
+        padding: 8px 10px;
+    }
+    
+    .message-header {
+        font-size: 0.75rem;
+    }
+    
+    .chat-input {
+        font-size: 16px; /* Предотвращает зум на iOS */
     }
 }
 
@@ -1480,6 +1573,8 @@ body {
     flex-direction: column;
     box-shadow: 5px 0 25px rgba(0, 0, 0, 0.5);
     transition: transform 0.3s ease;
+    max-height: 100vh;
+    overflow: hidden;
 }
 
 .profile-header {
@@ -1581,6 +1676,94 @@ body {
     font-size: 1.25rem;
     cursor: pointer;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 768px) {
+    .profile-container {
+        width: 100%;
+        max-width: 100%;
+        left: 0;
+        border-right: none;
+        border-radius: 0;
+        z-index: 999;
+        display: flex;
+        flex-direction: column;
+        box-shadow: none;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .profile-container:not(.hidden) {
+        transform: translateX(0);
+    }
+    
+    .profile-toggle-btn {
+        top: 15px;
+        left: 15px;
+        width: 55px;
+        height: 55px;
+        font-size: 1.3rem;
+    }
+    
+    .profile-restore-btn {
+        width: 52px;
+        height: 52px;
+        font-size: 1.2rem;
+    }
+    
+    .profile-minimized {
+        top: 75px;
+        left: 15px;
+    }
+    
+    .profile-header {
+        padding: 12px 15px;
+    }
+    
+    .profile-header h3 {
+        font-size: 1rem;
+    }
+    
+    .profile-body {
+        padding: 15px;
+    }
+}
+
+@media (max-width: 600px) {
+    .profile-toggle-btn {
+        top: 12px;
+        left: 12px;
+        width: 50px;
+        height: 50px;
+        font-size: 1.2rem;
+    }
+    
+    .profile-restore-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 1.1rem;
+    }
+    
+    .profile-minimized {
+        top: 65px;
+        left: 12px;
+    }
+    
+    .profile-container {
+        width: 100vw;
+    }
+    
+    .profile-field {
+        margin-bottom: 15px;
+    }
+    
+    .profile-stat span {
+        font-size: 1.2rem;
+    }
+    
+    .profile-stat small {
+        font-size: 0.7rem;
+    }
 }
 
 @media (max-width: 520px) {
